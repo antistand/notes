@@ -1,0 +1,558 @@
+1. Flask-Cache缓存
+    1) pip install flask-cache
+    2) 创建Cache对象
+        from flask_cache import Cache
+
+        # 有些案例中 from flask.ext.cache import Cache （过时）
+
+        cache = Cache(app, config={'CACHE_TYPE':'simple'})
+        # 创建cache时如果没有指定app
+        # 则要调用cache.init_app(app)来初始化
+    3) 使用cache
+        a) 缓存template模板内容
+            在请求处理函数的上一行添加：
+            @cache.cached(timeout=60)
+        b) 缓存其他数据(原声的(API)函数)
+            cache.set(key,value,timeout) 设置缓存数据
+            cache.get(key) 读取缓存数据
+        c) 清除缓存
+            cache.clear()
+
+    4) 总结：搞缓存就两步，先建立cache对象，然后@cache.cached(timeout)
+    5) 将缓存的网页放入redis，
+        cache = Cache(app, config={
+        'CACHE_TYPE': 'redis',
+        'CACHE_REDIS_HOST':  '127.0.0.1',
+        'CACHE_REDIS_PORT': '6379',
+        'CACHE_REDIS_DB': 3,
+        'CACHE_KEY_PREFIX': 'music_cache',
+        })
+
+
+---------------------数据库独立同步------------------------
+
+import settings
+
+# 随意先自己搞一个app，不要有任何依赖，直接再控制台导入并同步，结束之后将其删掉即可
+
+# app = Flask(__name__)
+# app.config.from_object(settings.Config)
+# db = SQLAlchemy(app)
+
+
+def init_db(app):
+    db.init_app(app)
+
+
+
+-----------------------数据库连接--------------------------
+pip install flask-sqlalchemy
+pip install flask-migrate
+
+配置 数据库链接
+SQLALCHEMY_DATABASE_URL = 'sqlite:////home/apple/......绝对路径'
+SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+创建数据库对象和初始值
+在models.py文件中
+
+    python manage.py db init  -----------------初始化数据库
+    python manage.py db migrate  -----------------制定迁移计划
+    python manage.py db upgrade  -----------------数据库更新
+
+
+    db = SQLAlchemy()  # 创建数据库db对象
+
+    def init_db(app):  # 对数据库db对象进行初始化
+        db.init_app(app)
+
+        # 创建migrate对象
+
+        Migrate(app,db)  # from flask_migrate import
+
+    在 manage.py文件中
+    向manage中添加db命令：
+    # from flask_migrate import MigrateCommand
+    manage.add_command('db', MigrateCommand)
+
+    # 在命令行中初始化数据库，生成迁移计划，执行迁移
+    python manage.py db init, migrate -- message '本次迁移的一些消息', upgrade
+
+    在views处理请求函数中，使用models.db.session或者是models.Categray来实现数据库的增删查改
+
+     增加/修改：
+     models.db.session.add(obj)  # obg是db.Model类子类对象
+     models.db.session.add_all(())  # 添加一个可迭代对象的对象，可以添加obj1，obj2，obg3...
+
+     删除：
+     models.db.session.delete(obg)  # 删除单个对象
+
+     增加/修改/删除 必须要提交事务：
+     models.db.session.commit()
+
+     查询
+     models.Categary.query.all() 查询所有模型类对象
+     models.db.session.query(模型类).all()
+     models.db.session.query(模型类).filter_by(类属性名=条件参数值)
+     models.db.session.query(模型类).get(主键值)
+     models.模型类.query.get(主键值)
+
+
+     # 所有的操作几乎必须得带上session字段进行操作
+
+
+# 列出所有类型，在类型后面进行修改和删除，加上bootstrap
+
+
+-------------------------------数据库操作-------------------------------
+
+1.获取模型类的查询对象
+  1) 通过session来获取BaseQuery对象
+  query = db.session.query(User.id, User.name)
+  可以再query()方法中指定查询的字段Column，如果指定的是实体类，
+  则表示要查询类中的所有Column字段，如：
+  query = db.session.query(User)
+
+  2) 通过实体类来获取BaseQuery对象
+  query = User.query  # 查询所有实体类中的字段
+
+2.查询过滤条件
+  1) filter(Column 条件 条件值, )
+  条件： == 或 Column.__eq__()
+        != 或 Column.__ne__()
+        >  或 Column.__gt__()
+        <  或 Column.__lt__()
+        >= 或 Column.__ge__()
+        <= 或 Column.__le__()
+  2) 模糊查询：
+     User.query.filter(User.name.like('%康%')).all()
+     范围查询：
+     User.query.filter(User.name.in_((1, 3))).all
+     字符传相关查询条件
+     User.query.filter(User.name.startswith('康')  # 以什么什么开头的数据
+     User.query.filter(User.name.endswith('康')  # 以什么什么开头的数据
+  3) 聚合查询
+    使用db.func对象进行聚合查询
+        db.session.query(db.func.count(User.id)).all()
+        count(Column)，Column可以使任意一列 '*'
+        但是query查询中必须指定列(User 或 User.name)
+        如：db.session.query(User.name, db.func.count('*')).all()
+
+    max(Column)  最大
+    min(Column)  最小
+    sum(Column)  求和
+    avg(Column)  平均
+
+    使用聚合函数时，与分组一块使用 BaseQuery.group_by(Column)
+    例：db.session.query(User.name, db.func.sum(User.id)).group_by(User.name).all()
+
+    BaseQuery.filter_by(属性名=属性值)
+    只能完成等值查询
+    q.db.session.query(User)
+    q.filter_by(name='Disen').all()
+    q.filter_by(name='Disen', id=1).all()
+
+  4) 启用别名
+      select user.name, count(*) as cnt from user
+      如果数据库是mysql, 需要注意：
+      在查询字段中没有使用聚合函数的列，要出现在group by语句中
+      select user.name, count('*') as cnt from user froup by user.name
+
+3. 排序，分页
+    1) 排序 BaseQuery.order_by(Column) 默认升序  db.session.query(User).order_by(User.id).all()
+       降序 Column.desc()     降序排序   db.session.query(User).order_by(User.id.desc()).all()
+
+    2) 分页
+        从BaseQuery.paginate() 获取 Pagination 分页器
+        paginate(page=1, per_page=10)
+            page 当前页码
+            per_page 每页显示记录数
+
+        Pagination类对象的属性：
+            items 列表类型，包含页面内所有数据
+            has_prev: 是否有上一页
+            has_next: 是否有下一页
+            next_num: 下页页码
+            prev_num: 上页页码
+            pages: 总页码
+            total: 数据总量
+            page:  当前页码
+            per_page: 每页显示的记录数
+
+4. 关联操作
+    db.ForeignKey('外表名.主键名')  在多端声明外键
+
+    db.relationship('关联类名', backref=db.backref('多端类名', backref=) 在多端声明关联类的属性
+    通过backref在关联类中，声明一个属性，可以关联查询多端的对象属性
+    db.backref('额外属性名', lazy=True)
+        lazy 为True，表示额外的属性在被调用时，才关联查询
+               False，无论使用与否，在查寻一端类的时候，也会关联查询
+
+    或关系查找
+    query(User).filter(or_(User.id==key, User.name==key, User.phone==key))
+
+    2) 关联添加：
+        在一端：
+            先查询一端的对象：
+            u = User.query.get(1)
+
+            通过backref生成的集合属性，append()添加多端的对象
+            m1 = Music(name='大海', singer='张雨生', brand='经典', mp3_path='www.baidu.com', user_id=1)
+            u.musics.append(m1)
+
+            保存一端对象
+            db.session.add(u)
+            db.session.commit()
+
+        多端
+            m2 = Music(name='行星', singer='cici', brand='日本冲绳民谣', mp3_path='www.yahoo.com', user_id=5)
+            m2.user_id = 3    # 直接将Music的user_id设置为3，就将音乐绑定到了3号用户
+            或 m2.user = User.query.get(3)  # 这是通过反向关联获取的一个对象，给m2的user属性赋予User对象3，直接也可以形成绑定关联
+
+            db.session.add(m2)
+            db.session.commit()
+
+
+    3) 关联查询
+        db.session.query(User.name, Music.name).all()  # 会出现逻辑错误，笛卡尔层级
+        db.session.query(User.name, Music.name).join(Music).all()  内连接
+        db.session.query(Music.name, User.name).outerjoin(Music).all()  外连接
+
+    4) 关联查询中 多端属性的.any()方法的应用
+        User.query.filter(User.music.any()).all()  查询所有有音乐信息的用户
+
+
+5. 扩展其他操作
+    1) 统计查询结果d
+        User.query.count()  获取查询的记录数
+        db.session.query(User).count()
+
+    2) BaseQuery.first()  获取查询结果的第一条
+    3) db.session.refresh(obj)  从数据库同步到对象，刷新数据
+    u1 = User.query.get(1)
+    db.session.refresh(u1)
+
+    4) 查询用户1下所收藏的音乐
+    User.query.get(1).music
+    Music.query.filter(Music.user_id==1).all()
+
+    5) 多对多关联万件关系，查询方式
+        使用第三方表，
+        class Collect():
+            user_id = db.Colunm(db.Integer, db.ForeignKey('image.id'))
+            img_id = db.Column(db.Integer, db.ForeignKey('image.id'))
+            两个表进行连接时，他会通过这个关系自动查找
+
+    Image.query.join((Collect)).
+    filter(Collect.user_id == 1).all()
+
+6. SQLAlchemy + MySQL 数据库连接
+    1) 先安装 pymysql
+    2) 配置数据库链接
+
+
+----------------------------------------rest接口写法---------------------------------------
+
+1 回顾Rest接口写法
+    1)请求 ---> 响应
+      资源 ---> 结果
+      资源：uri 类似于路由
+
+      动作：对资源做什么操作
+           post 新增资源
+           put 修改某一资源（某一属性）
+           patch 修改多个资源（多个属性）
+           delete 删除资源
+           get 查询资源    delete, get是request.arge.get()取数据，  post put patch是request.form.get()取数据
+
+      结果： json数据
+            jsonify({})
+            json.dumps(obj, cls)  cls 自定义JSONEncoder转码器
+
+            如果数据是list[***Model]类型，包含object对象，则自定义object转json的编码器（JSONEncoder）
+            声明@propery def json(self): return {} ，通过列表生成器，进行json格式转换
+
+2 flask-restful扩展库
+    1）pip install flask-restful
+    2）创建Api（app）
+        from flask_restful import Api
+        api = Api(app)
+
+    3）创建Resource子类：Resource是flask_restful中的类
+        class UserApi(Resource):
+            def get(self):   # rest的get请求动作
+                pass
+
+            def post(self):
+                pass
+
+            def put(self):
+                pass
+
+            def patch(self):
+                pass
+
+            def delete(self):
+                pass
+
+    4）将Resource资源添加到Api对象中
+        api.add_source（UserApi, '/user/', endpoint='user'）  使用endpoint可以进行反向获取路径
+
+3 flask-sqlacodegen 第三方扩展库的使用
+    1）pip install flask-sqlacodegen
+    2）pip install pymysql sqlalchemy
+    3）使用flask-sqlacodegen命令，到处表的模型类
+        flask-sqlacodegen --outfile models.py + (数据库链接方案) mysql+pymysql://user:password@hostaddr:3306/databasename  # 本例为mysql数据库
+        flask-sqlacodegen --outfile models.py sqlite:////root/flask/news/news.db  # sqlite链接
+
+    4）声明 dao.py
+        说明DAO：数据访问对象，封装对所有模型类的CRUD操作
+        a）创建SQLAlchemy对象
+            db = SQLAlchemy(app)   # app的初始化一般会用函数再manage.py里面实现
+            def query(cls) -> BaseQuery:  # 通过->来声明函数返回类型
+            return db.session.query(cls)
+
+        b）声明相关的函数来实现CRUD的操作
+            def query(cls):  # 返回BaseQuery对象
+                return db.session.query(cls)  # 返回指定表的查询器对象
+
+            def delete(obj):  # 删除用户则传入User对象，删除图片则传入Image对象
+                db.session.delete(obj)
+                db.session.commit()
+
+            def add(obj):
+                db.session.add(obj)
+                db.session.commit()
+
+            def patch(*obj):  # 加入*号进行批量修改
+
+    5）再api.py文件中，导入dao.py和models.py进行相关操作增删查改
+
+    6）任务：实现删除操作，优化dao中函数
+
+-------------------------------------------整体总结-------------------------------------------
+
+1 flask-restful
+    1）rest是一种设计规范，为了适应前后端分离（移动段与服务端分离）的情况，为了让请求的数据最小化，最优化。提供了
+    资源（Resource），uri（统一资源标识符）和动作等概念。
+
+    2）在服务端（flask项目）提供一个api.py脚本，声明对Resource的操作，
+    class UserResource(Resource):
+        # from flask_restful import Resource
+        # 声明相关的动作（get，post，put，delete，patch） 动作固定，不能改变
+        def get(self):
+            return{}
+
+    3）为资源添加一个uri
+    api = Api(app)  # from flask_restful import Api 从flask_restful 引入了Api
+    api.add_resource(UserResource, '/user/')
+
+    4）定制输入和输出
+    定制输入：
+        # from flask_restful import reqparse 从flask_restful（请求解析包） 导入 reqparse（请求解析类）
+        parser = reqparse.RequestParser()
+
+        # 添加输入参数(请求参数)的说明
+        # 客户端要访问服务端，请求动作里面带有的参数，参数来源需要自己手写location=['args', 'form', 'files', 'cookies']，表示四个参数都可以拿到数据
+        parser.add_argument('参数名'，type=int/str，required=True，help='验证失败的提示消息'，location='参数来源(args, form, files, cookies)')
+
+        # 在动作处理函数中，通过parse_args()函数来验证请求参数是否满足条件
+        def get(self):
+            args = self.parser.parse_args()  # 不满足，自动中断请求，来源是来自location里面定制，自动进行解析，args只是一个变量，用来承载解析后的结果
+            # 满足条件，继续业务实现
+            xx = args.get('参数名')
+            return {}
+
+
+        # 定制输出参数
+
+            # from flask_restful import marshal, marshal_with, field
+            # 声明users列表中每个元素（User类对象）的输出格式
+            user_fields = {'id': fields.Interger,
+                           'name': fields.String,
+                           'phone': fields.String}
+
+            out_fields = {'msg': fields.String,
+                          'data': fields.Nested(user_fields)}  # 让输出格式按照user_fields进行输出
+
+            1）@marshal_with(fields)  # 声明输出的字段
+                def get(self):
+                    data = {'msg': '', 'data': users}  # users = [<class User>，<class User>]
+                    return data
+
+            2）marshal(data, fields)
+                def get(self):
+                    data = {'msg': '', 'data': users}
+                    return marshal(data, self.out_fields)  # 用了第二种方法，就不用在def上面些@marshal_with了
+
+    5） 文件上传
+        前端核心代码：
+            function uploadImg(file){
+                var formdata = new formData()  # 默认为multipart/form-data
+                formdata.append('参数名', file)  # 要和后端的输入参数验证对应起来，file是js的文件类对象
+
+                $ajax('/upload/', {
+                    type: 'post',
+                    data: formdata,
+                    contentType: false //对上传的数据不做任何编码处理
+                    processData: false //同上，不做任何的数据处理
+                    dataType: 'json',
+                    success: function(data){
+                        // 文件上传成功后的回调函数
+                        // 后台一般回传一个图片的url
+
+                    }
+                }
+            }
+
+
+            class UploadApi(Resource):
+
+                # from werkzeug.datastructures import FileStorage
+
+                parser = reqparse.RequestParser()
+                parser.add_argument('img',
+                                    type=FileStorage,
+                                    location='files',
+                                    required=True,
+                                    help='必须提供一个名为img的File表单参数'
+
+
+                def post(self):
+
+                    args = self.parser.parse_args()
+                    uFile = args.get('img')
+
+                    uFile.save('~/home/hwk/Downloads/')  # 将上传的文件保存在服务器指定的文件目录里面
+
+                    return {'msg': '上传成功',
+                            'path': '~/static/uploads/{}'.format(newFileName)}
+
+
+        扩展：在settings.py文件，设计BASE_DIR，STATIC_DIR/MEDIA_DIR
+            1）获取settings.py文件的绝对路径
+                dbspath = os.path.abspath(__name__)
+
+            2）获取settings.py所在目录
+                base_dir = os.path.dirname(abspath)  # dirname是指获取setting文件所在目录的目录名
+
+            3）获取settings.py所在目录的static目录
+                static_dir = os.path.join(base_dir, 'static')
+
+            4）相对于settings.py所在目录的static目录的uploads位置
+                media_dir = os.path.join(static_dir, 'uploads')
+
+XML对象，和JSON对象一样可以用于前后端数据传输，但是不推荐
+<datas>
+    <data>
+        <users>
+            <user id=1>
+                <phone>1883953503958</phone>
+            </user>
+        </user>
+    </data>
+</datas>
+
+
+------------------------------------------------------git操作----------------------------------------------------
+1. 在github创建一个仓库
+    将仓库的位置 http://ssss/xxxx.git 复制一下，
+2. 在项目的根路径下，初始化本地仓库并添加远程仓库
+
+echo "# flask-rest" >> README.md
+git init
+git add README.md
+
+
+3. 再本地仓库进行添加文件
+git add * 添加所有文件  或者 git add .
+config -l 查看git配置信息
+git status 查看未跟踪的文件
+.idea/ 文件千万不能上传上去  （包含了当前开发工具中相关的环境配置，不需要提交）
+
+
+4. 提交并推送到 github远程仓库中
+git commit -m "first commit"
+
+# 第一次上传，因为远程仓库不存在master主分支，所以我们要使用
+git push --set-upstream origin master 来设置master主分支
+
+
+# 以后再次上传时， 就不再使用--set-upstream命令
+git remote add origin https://github.com/RiverStormWinds/flask-rest.git
+git push -u origin master
+
+
+5. 在开始跟踪文件后 -- 绿色
+可以进行撤销跟踪： git reset HEAD <文件名或目录名>
+
+
+----------------------------------------------------git分支操作----------------------------------------------------
+
+1. 首先，在本地创建一个小分支用于操作整个项目
+    git checkout -b HWK
+
+2. 建立一个随便的文件用于测试提交
+    git branch  查看所有分支信息
+    git add .
+    git reset .idea/
+
+3. 将更改提交给小分支
+    git commit -m 'HWK'
+
+4. 进入master分支
+    git checkout master --进入主分支
+    git merge --no-ff -m '合并HWK分支' HWK  -- 合并小分支HWK
+
+5. master分支直接提交到github
+    git push oragin master
+
+6. 消灭本地小分支
+    git branch -d 'HWK' 删除小分支
+
+7. 查看日志及状态等相关信息
+    git log --graph
+    git log --pretty=oneline --graph
+    git log
+    git reflog
+    git status
+
+8. 去除.idea/等不必要文件
+    git reset .idea/
+
+9. 更改并新添加远端源信息
+    git remote rm origin
+    git remote add origin https://github.com/RiverStormWinds/flask-rest.git
+
+---------------------------------------------salary异步队列存储-----------------------------------------------
+
+ celery -A tasks worker --loglevel=info  开启celery服务
+
+ 配合redis简单操作： type selery 查看key类型
+
+如果线程报错，则导入：pip3 install eventlet包，此包处理线程报错问题
+
+clelry -A tasks worker --pool=solo -info
+
+为何如此，原因未知
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
