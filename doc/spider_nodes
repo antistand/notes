@@ -1,0 +1,214 @@
+------------------------------------------------爬虫简单总结--------------------------------------------------
+
+
+1. 简单的urllib包：
+    from urllib import request  # 从urllib包倒入request
+    response = request.urlopen(url)  # 请求网站，将结果赋予变量response
+    response.status，response.read().decode()，状态码和返回的页面
+
+    # 简单的mp4文件爬取并保存
+    request.urlretrieve(url, '文件路径+文件名'）
+
+2. 简单的cookiejar：
+    cookiejar可以管理服务器返回的cookie信息，用于登陆爬取操作
+
+    a. 建立管理工具对象
+        from http import cookiejar
+        cookieJar = cookiejar.CookieJar()
+    b. 建立handler对象
+        handler对象用来管理cookie
+        handler = request.HTTPCookieProcessor(cookieJar)
+    c. 创建请求的opener对象
+        opener = request.build_opener(handler)
+        opener对象相当于一个浏览器，模仿登陆操作
+    d. 创建请求对象
+        loginParams = {
+            'user': 'kangguixi',
+            'password': 'password',
+            ......
+        }
+        params = parse.urlencode(loginParams)
+        loginReq = request.Request(url=login_url,
+                                   data=params.encode(),
+                                   headers=headers)
+    e. 发起请求登陆
+        resp = opener.open(loginReq)
+    以上五步，使用urllib解决爬虫登陆操作
+
+3. 简单的requests模块
+    集成了urllib3的网络请求，请求头，Cookie，代理等功能，方庄了方便使用的函数
+    注：请求的参数数据，不需要urlencode，其内置模块自动处理
+    网络请求：get/post/put/delete/patch
+    response.status_code
+    resopnse.text
+    response.content
+    response.headers
+    response.cookies  # 用于登陆操作
+
+4. 云打码插件使用：
+    a. 注册开发者帐号，并充值
+    b. 按照网站提示操作即可
+
+5. 简单数据解析
+    import json
+    html数据解析(xpath, beautifulSoup)
+    json数据解析(json.loads(), json.dumps)
+    json.dumps：将json对象转化成json形式的字符串
+    json.loads: 用于将str类型的数据转成dict
+    json.load/dump：是用来存储数据的
+
+6. 爬虫框架
+    a. pip install scrapy
+    b. 创建scrapy项目
+        scrapy -h：查看scrapy命令帮助
+        scrapy startproject 此命令使用命令行建立项目
+    c. 然后进入项目目录，生成蜘蛛类
+        scrapy genspider 脚本名 www.XXXXXX.com
+    d. 生成后进行初始化：
+        name: 蜘蛛的名称
+        allowed_domin = []  # 允许访问的域名  服务器
+        start_urls = ['']  # 爬虫爬取的入口
+        差不多可以爬了
+        def parse(self, response):
+            pass
+        回调函数，用于请求后的数据解析
+
+    e. 运行爬虫
+        scrapy crawl 爬虫名
+
+    f. 修改相关的配置文件，用来控制爬取过程中的数据处理方法
+        item：用来结构化爬取数据的
+        middlewares：用来处理业务逻辑，中间件处理
+        pipelines：与数据库结合（mysql，redis）讲数据结构化后存入数据库
+
+6.1. 爬虫框架处理过程
+    a. 核心engine：框架核心引擎
+        以setting配置为基准，发送网络请求
+        start_urls --> 将所有的链接请求压入scheduler队列
+        给下载起Downloader --> 下载之后，由item进行处理
+        --> 给pipeline，让管道进行存储
+
+    b. 简单测试：
+        在黑窗口输入此命令：scrapy shell https://www.qiushibaike.com/，进入测试环境
+        view(response)  # 在浏览器中打开response
+        rel = response
+        next_url = rel.xpath('//ul[@class="pagination"]/li[last()]/a/@href').extract()
+        next_page_url = response.urljoin(next_url[0])
+        # //div[starts-with(@class, 'title_all')}//font，以什么什么开始
+
+6.2. 爬虫框架的<a>标签提取器LinkExtractors
+    a. 创建小蜘蛛的两种形式
+        from scrapy.linkextractors import LinkExtractor  # 只针对a标签
+        # 以模板的形式创建一个带rule的蜘蛛，后面可以接分布式redis
+        scrapy genspider -t crawl 蜘蛛脚本名 www.XXXXXX.com
+        # 创建一个普通的蜘蛛爬虫
+        scrapy genspider 蜘蛛脚本名 www.XXXXXX.com  # 创建一个普通的蜘蛛
+
+    b. 链接提取器的工作方式：
+        1. 通过链接提取器，engine自动将所有符合规则的链接加入到项目的下载队列中
+        2. 当follow为True是，当下载器下载链接时，会自动提取本页的所有符合规则的链接
+        3. 当发起请求成功后，由callback指定的解析函数来进行处理
+
+    以下为rule模板形式创建示例：
+
+        class DbSpider(CrawlSpider):
+        name = 'db'
+        allowed_domains = ['www.baidu.com']
+        start_urls = ['http://www.baidu.com/']
+
+        rules = (
+            Rule(LinkExtractor(allow=r'Items/'), callback='parse_item', follow=True),
+        )
+
+        def parse_item(self, response):
+            i = {}
+
+            return i
+
+6.3. 自定义管道：
+
+    a. settings文件：
+        ITEM_PIPELINES = {
+       'dushu.pipelines.DushuPipeline': 300,
+       'dushu.pipelines.ImagePipeline': 301,  # 将我们自定义的管道名称加入settings文件当中，设置优先级为301
+    }
+
+    b. pipelines文件：
+        class DushuPipeline(object):
+        def process_item(self, item, spider):
+            # 向数据库写入
+            print('---item写入数据库的Pipeline---')
+
+            return item
+
+        class ImagePipeline(object):
+            def process_item(self, item, spider):
+                # 下载图片
+                print('---item保存图片的Pipeline---')
+
+                return item
+
+    c. 简单正则：
+    import re
+    print(re.search(r'/book/\d+_?\d*?.html', 'https://www.dushu.com/book/1617.html')[0])
+
+6.4. 爬虫post请求
+    url, formdata: 表单参数， callback：回调函数
+
+7. 分布式爬虫redis ******************************************************
+
+    redis分布式定义：
+        1. 先在settings里面设置redis的配置：
+            REDIS_HOST = '127.0.0.1'
+            REDIS_PORT = 6379
+            REDIS_PARAMS = {'db': 2}
+
+        2. 在蜘蛛脚本名中： scrapy genspider -t crawl 蜘蛛脚本名 www.XXXXXX.com
+            设置redis_key = 'xh:start_urls'  # 名字随意起
+            使用redis派发任务： lpush xh:start_urls https://www.baidu.com
+
+
+    a. redis ip地址配置
+        sudo gedit /etc/redis/redis.conf
+        将bind修改为： bind 10.35.163.9 ::1
+        sudo service redis restart
+
+    b. 简单的redis命令行操作
+        set tom 'hi, hom'
+        获取value： get tom
+        获取key： keys *
+        获取类型： type key
+        删除： del tom
+        获取数量：llen dushu items
+                 lindex dushu items json格式
+        redis 增加数据： lpush name yang
+        lpush dushu:start_urls https://www.dushu.com/book/1617.html
+        lrange xh:items 0 100 # 查数据库里的大数据
+
+    c. 分布式简单配置
+        # redis-scheduler
+        SCHEDULER = "scrapy_redis.scheduler.Scheduler"  # 调度器
+
+        # Ensure all spiders share same duplicates filter through redis.
+        DUPEFILTER_CLASS = "scrapy_redis.dupefilter.RFPDupeFilter"  # 去重
+
+        # 调度器任务持久化
+        SCHEDULER_PERSIST = True
+
+        # REDIS服务位置
+        # 默认127.0.0.1:6379
+        REDIS_HOST = '127.0.0.1'
+        REDIS_PORT = 6379
+
+        # redis管道  管道分为： redis管道和自己定义数据存储管道，此为redis管道
+        ITEM_PIPELINES = {
+        'scrapy_redis.pipelines.RedisPipeline': 300
+        }
+
+        # 管道是串行传输，所以每个管道都必须有return，由优先级高的return给优先级低的
+        ITEM_PIPELINES = {
+       'xiaohua.pipelines.DBXiaohuaPipeline': 300,  # 数据库存储管道
+       'scrapy_redis.pipelines.RedisPipeline': 301,  # redis存储管道
+       'xiaohua.pipelines.ImagePipeline': 302,  # 图片存储管道
+    }
+
